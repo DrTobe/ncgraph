@@ -1,2 +1,2 @@
-# ncgraph
+# NCGraph
 Python NCurses Grapher Class
