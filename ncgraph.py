@@ -152,8 +152,8 @@ yb = [(1/4)*math.sin(4*i) for i in x]
 yc = [math.sin(i) + (1/4)*math.sin(4*i) for i in x]
 myGrapher = Grapher(stdscr)
 myGrapher.plot(x, ya, label="sin(x)")
-myGrapher.plot(x, yb, label="(1/4)sin(2x)")
-myGrapher.plot(x, yc, label="sin(x)+(1/4)sin(2x)")
+myGrapher.plot(x, yb, label="(1/4)sin(4x)")
+myGrapher.plot(x, yc, label="sin(x)+(1/4)sin(4x)")
 
 stdscr.getch()
 
