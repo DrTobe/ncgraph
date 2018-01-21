@@ -138,25 +138,26 @@ class Grapher(object):
         # Update the legend.
         self.updateLegend()
 
-import numpy
-import math
+if __name__ == '__main__':
+    import numpy
+    import math
 
-stdscr = curses.initscr()
-curses.noecho()
-curses.cbreak()
+    stdscr = curses.initscr()
+    curses.noecho()
+    curses.cbreak()
 
-x, y = [], []
-x = [i for i in numpy.arange(-3.5, 3.5, 0.01)]
-ya = [math.sin(i) for i in x]
-yb = [(1/4)*math.sin(4*i) for i in x]
-yc = [math.sin(i) + (1/4)*math.sin(4*i) for i in x]
-myGrapher = Grapher(stdscr)
-myGrapher.plot(x, ya, label="sin(x)")
-myGrapher.plot(x, yb, label="(1/4)sin(4x)")
-myGrapher.plot(x, yc, label="sin(x)+(1/4)sin(4x)")
+    x, y = [], []
+    x = [i for i in numpy.arange(-3.5, 3.5, 0.01)]
+    ya = [math.sin(i) for i in x]
+    yb = [(1/4)*math.sin(4*i) for i in x]
+    yc = [math.sin(i) + (1/4)*math.sin(4*i) for i in x]
+    myGrapher = Grapher(stdscr)
+    myGrapher.plot(x, ya, label="sin(x)")
+    myGrapher.plot(x, yb, label="(1/4)sin(4x)")
+    myGrapher.plot(x, yc, label="sin(x)+(1/4)sin(4x)")
 
-stdscr.getch()
+    stdscr.getch()
 
-curses.echo()
-curses.nocbreak()
-curses.endwin()
+    curses.echo()
+    curses.nocbreak()
+    curses.endwin()
