@@ -37,6 +37,8 @@ def main(stdscr):
             myGrapher.redraw()
         elif k == 'g':
             myGrapher.toggleLegend()
+        elif k == 't':
+            myGrapher.toggleTicks()
         elif k == 'l':
             myGrapher.moveright()
         elif k == 'h':

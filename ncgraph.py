@@ -1,6 +1,11 @@
 import curses
 import math
 
+# ─│┌┐└┘├┤┬┴┼
+
+LEFTBORDER = 7
+BOTTOMBORDER = 2
+
 debugfile = open("debug.output", 'w')
 def DEBUG(string):
     debugfile.write("%s\n" % string)
@@ -14,6 +19,17 @@ class DataSeries(object):
         self.length = len(X)
         self.color = color
 
+# TODO Currently unused
+class Lim(object):
+    def __init__(self, lower, upper):
+        self.set(lower, upper)
+    def set(self, lower, upper):
+        self.lower = lower
+        self.upper = upper
+    def range(self):
+        return self.upper - self.lower
+
+
 class Grapher(object):
     seriesList = []
     legend = False
@@ -21,6 +37,11 @@ class Grapher(object):
     autoAxis = True
 
     def __init__(self, window):
+        # Reset seriesList for consecutive calls
+        self.seriesList = []
+        # Initialize borders
+        self.border_left = LEFTBORDER
+        self.border_bottom = BOTTOMBORDER
         # Setup the window
         self.setWindow(window)
         # Initalise color
@@ -30,8 +51,15 @@ class Grapher(object):
             curses.init_pair(i+1, i, -1)
 
     def setWindow(self, window):
-        self.plotArea = window # TODO: Setup boarders with plotArea
-        self.height, self.width = self.plotArea.getmaxyx()
+        self.window = window # TODO: Setup borders with window
+        self.getPlotArea()
+
+    def getPlotArea(self):
+        self.height, self.width = self.window.getmaxyx()
+        self.left = self.border_left
+        self.right = self.width-1
+        self.top = 0
+        self.bottom = self.height-1-self.border_bottom
 
     def setAxis(self, x_min=0, x_max=0, y_min=0, y_max=0, auto=False):
         self.autoAxis = auto
@@ -154,40 +182,48 @@ class Grapher(object):
         return self.getgridpoints(size, 4, self.y_min, self.y_max)
 
     def plotGridlines(self):
-        return
+        return # TODO deactivated until we have nicer color support
         xgrid = self.getxgrid()
         ygrid = self.getygrid()
         for x in xgrid:
-            col = self.mapValue(x, self.x_min, self.x_max, 0, self.width-1)
-            for row in range(0, self.height-1):
-                self.plotArea.addstr(row, col, '|')
+            col = self.mapValue(x, self.x_min, self.x_max, self.left, self.right)
+            for row in range(self.top, self.bottom):
+                self.window.addstr(row, col, '|')
         for y in ygrid:
             # The first one works, too, but does not yield the same result as the x-axis so the gridline and x-axis don't match
             #row = self.mapValue(y, self.y_min, self.y_max, self.height-1, 0)
-            row = self.height-1 - self.mapValue(y, self.y_min, self.y_max, 0, self.height-1)
+            row = self.mapValue(y, self.y_min, self.y_max, self.bottom, self.top)
         #xaxisy = self.height-1 - self.mapValue(0, self.y_min, self.y_max, 0, self.height-1)
-            for col in range(0, self.width-1):
-                self.plotArea.addstr(row, col, '-')
+            for col in range(self.left, self.right):
+                self.window.addstr(row, col, '-')
     
     def plotGrid(self):
+        if not self.border_bottom or not self.border_left:
+            return
         xgrid = self.getxgrid()
         ygrid = self.getygrid()
+        for col in range(self.left, self.right+1):
+            self.window.addstr(self.bottom+1, col, '─')
+        for row in range(self.top, self.bottom+1):
+            self.window.addstr(row, self.left-1, '│')
+        self.window.addstr(self.bottom+1, self.left-1, '└')
         for x in xgrid:
-            col = self.mapValue(x, self.x_min, self.x_max, 0, self.width-1)
+            col = self.mapValue(x, self.x_min, self.x_max, self.left, self.right)
             text = str(x)
-            self.plotArea.addstr(self.height-2, col, '┴')
+            self.window.addstr(self.bottom+1, col, '┴') # self.bottom+1 == self.height-2 (line before last line)
             if col + len(text) > self.width-1:
                 col = self.width-1 - len(text)
-            self.plotArea.addstr(self.height-1, col, text)
+            self.window.addstr(self.bottom+2, col, text) # self.bottom+2 == self.height-1 (last line)
         for y in ygrid:
-            row = self.height-1 - self.mapValue(y, self.y_min, self.y_max, 0, self.height-1)
-            self.plotArea.addstr(row, 6, '├')
+            row = self.mapValue(y, self.y_min, self.y_max, self.bottom, self.top)
+            self.window.addstr(row, self.border_left-1, '├')
             text = str(y)
-            if len(text) > 5:
-                text = text[0:5] + " "
+            # The left-border text length should be <= border_left-1 --> len <= border_left-2 + " "
+            if len(text) > self.border_left-2:
+                text = text[0:self.border_left-2] + " "
             else:
-                text = " " * (5-len(text)) + text + " "
-            self.plotArea.addstr(row, 0, text)
+                text = " " * (self.border_left-2-len(text)) + text + " "
+            self.window.addstr(row, 0, text)
 
     """
     Plots the coordinate system axis, the ordinate and abscissa.
@@ -195,25 +231,34 @@ class Grapher(object):
     # TODO If the coordinate base lies outside of the drawing area, what will happen?
     def plotAxis(self):
         # Calculate x, y values at y, x axis
-        yaxisx = self.mapValue(0, self.x_min, self.x_max, 0, self.width-1)
-        xaxisy = self.height-1 - self.mapValue(0, self.y_min, self.y_max, 0, self.height-1)
+        yaxisx = self.mapValue(0, self.x_min, self.x_max, self.left, self.right)
+        xaxisy = self.mapValue(0, self.y_min, self.y_max, self.bottom, self.top)
         # Plot y axis
         if self.isPlottable(0, self.y_min):
-            for y in range(self.height):
-                self.plotArea.addstr(y, yaxisx, "|")
-            self.plotArea.addstr(0, yaxisx, "^") # arrow
+            for y in range(self.top, self.bottom+1):
+                self.window.addstr(y, yaxisx, "│")
+            self.window.addstr(self.top, yaxisx, "↑") # arrow
         # Plot x axis
         if self.isPlottable(self.x_min, 0):
-            for x in range(self.width):
-                self.plotArea.addstr(xaxisy, x, "-")
-            self.plotArea.addstr(xaxisy, self.width-1, ">") # arrow
+            for x in range(self.left, self.right+1):
+                self.window.addstr(xaxisy, x, "─")
+            self.window.addstr(xaxisy, self.right, "→") # arrow
         # Plot origin
         if self.isPlottable(0, 0):
-            self.plotArea.addstr(xaxisy, yaxisx, "+")
+            self.window.addstr(xaxisy, yaxisx, "+")
 
     def toggleLegend(self):
-        self.legend = not self.legend;
-        self.redraw(); # this calls updateLegend(), too
+        self.legend = not self.legend
+        self.redraw() # this calls updateLegend(), too
+
+    def toggleTicks(self):
+        if self.border_left and self.border_bottom:
+            self.border_left = 0
+            self.border_bottom = 0
+        else:
+            self.border_left = LEFTBORDER
+            self.border_bottom = BOTTOMBORDER
+        self.redraw()
 
     """
     If self.legend is True, plots a legend box in the upper right corner.
@@ -225,10 +270,10 @@ class Grapher(object):
         labelLengths = []
         for ds in self.seriesList:
             labelLengths.append(len(ds.label))
-        x = self.width - max(labelLengths)
+        x = self.right+1 - max(labelLengths)
         for ds in self.seriesList:
-            self.plotArea.addstr(y, x, " "*max(labelLengths), curses.color_pair(ds.color) | curses.A_REVERSE)
-            self.plotArea.addstr(y, x, ds.label, curses.color_pair(ds.color) | curses.A_REVERSE)
+            self.window.addstr(y, x, " "*max(labelLengths), curses.color_pair(ds.color) | curses.A_REVERSE)
+            self.window.addstr(y, x, ds.label, curses.color_pair(ds.color) | curses.A_REVERSE)
             y += 1
 
     """
@@ -267,15 +312,15 @@ class Grapher(object):
                 # Check the value lies in the plottable area.
                 if self.isPlottable(x, y):
                     # The value is plottable, map it to a (px, py) plot location.
-                    px = self.mapValue(x, self.x_min, self.x_max, 0, self.width-1)
-                    py = self.height-1 - self.mapValue(y, self.y_min, self.y_max, 0, self.height-1)
+                    px = self.mapValue(x, self.x_min, self.x_max, self.left, self.right)
+                    py = self.mapValue(y, self.y_min, self.y_max, self.bottom, self.top)
                     # Plot the point at that location.
-                    #self.plotArea.addstr(py, px, " ", curses.color_pair(ds.color) | curses.A_REVERSE)
-                    self.plotArea.addstr(py, px, "*", curses.color_pair(ds.color))
+                    #self.window.addstr(py, px, " ", curses.color_pair(ds.color) | curses.A_REVERSE)
+                    self.window.addstr(py, px, "*", curses.color_pair(ds.color))
 
     def clearPlotArea(self):
-        self.plotArea.addstr(0, 0, " ")
-        self.plotArea.clrtobot()
+        self.window.addstr(0, 0, " ")
+        self.window.clrtobot()
 
     def clearData(self):
         self.seriesList = []
@@ -287,7 +332,7 @@ class Grapher(object):
 
     def redraw(self):
         # Determine the new size of the plotting area
-        self.height, self.width = self.plotArea.getmaxyx()
+        self.getPlotArea()
         # Clear the screen of any current plots.
         self.clearPlotArea()
         # Update axis limits
