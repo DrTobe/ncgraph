@@ -1,20 +1,41 @@
 # NCGraph
-Python NCurses Grapher Class
+Python NCurses Grapher Class (terminal plotting library).
 
 ## Usage
 
-The `grapher` object has a very simple usage. Setup your curses application and give the grapher a window. Setup two or more data sets as lists. Attach the grapher to the window and plot the data sets.
+The `ncgraph` plotting library has a very simple usage. Either, use `ncgraph.plot(x, y [,legend])` to plot a single function or create a figure object with `ncgraph.Figure()` while adding plots with `figure.plot(x,y)`. Finally, the figure object can be shown with `figure.show()`.
+
+While the curses application is running, the keys are (currently hardcoded) mapped as follows:
+* 'q': quit
+* 'g': toggle legend
+* 't': toggle x-ticks and y-ticks (bottom and left border)
+* 'h', 'j', 'k', 'l': vim-like keybindings for moving the drawing area
+* 'w', 'a', 's', 'd': zoom the drawing area
+* 'x': reset original view (fit all plots in the drawing area)
 
 ``` Python
-x, y = [], []
-x = [i for i in numpy.arange(-3.5, 3.5, 0.01)]
+import numpy
+import math
+import ncgraph
+
+# Create example plotting data
+x = numpy.arange(-3.5, 13.5, .01)
 ya = [math.sin(i) for i in x]
 yb = [(1/4)*math.sin(4*i) for i in x]
 yc = [math.sin(i) + (1/4)*math.sin(4*i) for i in x]
-myGrapher = Grapher(stdscr)
-myGrapher.plot(x, ya, label="sin(x)")
-myGrapher.plot(x, yb, label="(1/4)sin(4x)")
-myGrapher.plot(x, yc, label="sin(x)+(1/4)sin(4x)")
+
+# Direct plotting
+ncgraph.plot(x, ya, "sin(x)")
+
+# Multiple plots in a Figure object
+fig = ncgraph.Figure()
+fig.plot(x, ya, "sin(x)")
+fig.plot(x, yb, "(1/4)sin(4x)")
+fig.plot(x, yc, "sin(x)+(1/4)sin(4x)")
+fig.show()
+
+# After closing, the Figure object can be shown again
+fig.show()
 ```
 
 ![Example Output](screens/example-main.png)

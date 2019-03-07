@@ -411,9 +411,7 @@ if __name__ == '__main__':
     import time
 
     # Determine example plots
-    x, y = [], []
     x = numpy.arange(-3.5, 13.5, .01)
-    #x = [i for i in numpy.arange(-3.5, 13.5, 0.01)]
     ya = [math.sin(i) for i in x]
     yb = [(1/4)*math.sin(4*i) for i in x]
     yc = [math.sin(i) + (1/4)*math.sin(4*i) for i in x]
