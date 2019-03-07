@@ -4,9 +4,6 @@ import ncgraph
 import numpy
 import math
 
-import curses
-from curses import wrapper
-
 """
 def main(stdscr):
     stdscr.clear()

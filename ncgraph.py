@@ -1,6 +1,7 @@
 import curses
 import math
 
+# Just for reference: Unicode box-drawing characters
 # ─│┌┐└┘├┤┬┴┼
 
 LEFTBORDER = 7
@@ -179,7 +180,7 @@ class Grapher(object):
         return self.getgridpoints(size, 2, self.x_min, self.x_max)
     def getygrid(self):
         center, size = self.getysize()
-        return self.getgridpoints(size, 4, self.y_min, self.y_max)
+        return self.getgridpoints(size, 3, self.y_min, self.y_max)
 
     def plotGridlines(self):
         return # TODO deactivated until we have nicer color support
@@ -370,6 +371,8 @@ class Figure(object):
             k = stdscr.getkey()
             if k == 'q':
                 break
+            elif k == 'KEY_RESIZE':
+                ax.redraw()
             elif k == 'r':
                 ax.redraw()
             elif k == 'g':
@@ -405,23 +408,28 @@ def plot(x, y, label=""):
 if __name__ == '__main__':
     import numpy
     import math
+    import time
 
-    stdscr = curses.initscr()
-    curses.noecho()
-    curses.cbreak()
-
+    # Determine example plots
     x, y = [], []
-    x = [i for i in numpy.arange(-3.5, 3.5, 0.01)]
+    x = numpy.arange(-3.5, 13.5, .01)
+    #x = [i for i in numpy.arange(-3.5, 13.5, 0.01)]
     ya = [math.sin(i) for i in x]
     yb = [(1/4)*math.sin(4*i) for i in x]
     yc = [math.sin(i) + (1/4)*math.sin(4*i) for i in x]
-    myGrapher = Grapher(stdscr)
-    myGrapher.plot(x, ya, label="sin(x)")
-    myGrapher.plot(x, yb, label="(1/4)sin(4x)")
-    myGrapher.plot(x, yc, label="sin(x)+(1/4)sin(4x)")
 
-    stdscr.getch()
+    print("First, demonstrating a direct plot ...")
+    time.sleep(1)
+    plot(x, ya, "sin(x)")
 
-    curses.echo()
-    curses.nocbreak()
-    curses.endwin()
+    print("Now, demonstrating multiple plots in a Figure object.")
+    time.sleep(1)
+    f = Figure()
+    f.plot(x, ya, "sin(x)")
+    f.plot(x, yb, "(1/4)sin(4x)")
+    f.plot(x, yc, "sin(x)+(1/4)sin(4x)")
+    f.show()
+    print("And, Figure objects can be reused (shown again) after they have been closed.")
+    time.sleep(1)
+    f.show()
+
