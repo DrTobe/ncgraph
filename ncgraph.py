@@ -348,6 +348,60 @@ class Grapher(object):
         # Update the legend.
         self.updateLegend()
 
+class Figure(object):
+    def __init__(self):
+        self.seriesList = []
+
+    def plot(self, x, y, label=""):
+        self.seriesList.append(DataSeries(x, y, label))
+
+    def show(self):
+        curses.wrapper(lambda stdscr: self.drawingloop(stdscr))
+
+    def drawingloop(self, stdscr):
+        stdscr.clear()
+        curses.curs_set(False)
+        ax = Grapher(stdscr)
+        for s in self.seriesList:
+            ax.plot(s.X, s.Y, s.label)
+
+        colornum = 0
+        while True:
+            k = stdscr.getkey()
+            if k == 'q':
+                break
+            elif k == 'r':
+                ax.redraw()
+            elif k == 'g':
+                ax.toggleLegend()
+            elif k == 't':
+                ax.toggleTicks()
+            elif k == 'l':
+                ax.moveright()
+            elif k == 'h':
+                ax.moveleft()
+            elif k == 'j':
+                ax.movedown()
+            elif k == 'k':
+                ax.moveup()
+            elif k == 'w':
+                ax.zoominy()
+            elif k == 's':
+                ax.zoomouty()
+            elif k == 'a':
+                ax.zoomoutx()
+            elif k == 'd':
+                ax.zoominx()
+            elif k == 'x':
+                ax.autosize()
+            else:
+                stdscr.addstr(0,0,k)
+
+def plot(x, y, label=""):
+    fig = Figure()
+    fig.plot(x, y, label)
+    fig.show()
+
 if __name__ == '__main__':
     import numpy
     import math

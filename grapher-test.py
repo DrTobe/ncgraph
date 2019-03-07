@@ -7,6 +7,7 @@ import math
 import curses
 from curses import wrapper
 
+"""
 def main(stdscr):
     stdscr.clear()
     curses.curs_set(False)
@@ -59,6 +60,26 @@ def main(stdscr):
             myGrapher.autosize()
         else:
             stdscr.addstr(0,0,k)
+"""
 
+import time
 
-wrapper(main)
+# Determine example plots
+x, y = [], []
+x = numpy.arange(-3.5, 13.5, .01)
+#x = [i for i in numpy.arange(-3.5, 13.5, 0.01)]
+ya = [math.sin(i) for i in x]
+yb = [(1/4)*math.sin(4*i) for i in x]
+yc = [math.sin(i) + (1/4)*math.sin(4*i) for i in x]
+
+print("First, demonstrating a direct plot ...")
+time.sleep(1)
+ncgraph.plot(x, ya, "sin(x)")
+
+print("Now, demonstrating multiple plots in a Figure object.")
+time.sleep(1)
+f = ncgraph.Figure()
+f.plot(x, ya, "sin(x)")
+f.plot(x, yb, "(1/4)sin(4x)")
+f.plot(x, yc, "sin(x)+(1/4)sin(4x)")
+f.show()
