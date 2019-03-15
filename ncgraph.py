@@ -1,5 +1,6 @@
 import curses
 import math
+import numpy
 
 # Just for reference: Unicode box-drawing characters
 # ─│┌┐└┘├┤┬┴┼
@@ -7,9 +8,9 @@ import math
 LEFTBORDER = 7
 BOTTOMBORDER = 2
 
-debugfile = open("debug.output", 'w')
+debug_file = open("debug.output", 'w')
 def DEBUG(string):
-    debugfile.write("%s\n" % string)
+    debug_file.write("%s\n" % string)
 
 class DataSeries(object):
     def __init__(self, X, Y, label, color=0):
@@ -29,6 +30,205 @@ class Lim(object):
         self.upper = upper
     def range(self):
         return self.upper - self.lower
+
+class Interval(object):
+    def __init__(self, a, b):
+        self.a = a
+        self.b = b
+    """
+    Checks if the interval contains the point/value p.
+    """
+    def contains(self, p):
+        # As an interval could be decreasing, there are two possible cases how an interval
+        # could contain a value. We have to test them both here.
+        return (p >= self.a and p <= self.b) or (p <= self.a and p >= self.b)
+    """
+    Returns a (increasing) list of all integer values between a and b plus a and b themselves.
+    As the interval could be defined with a > b and the returned list here is always increasing,
+    the direction could be inverted.
+    """
+    def arange(self):
+        # The rounding operations are required for range() to work. The direction of rounding
+        # is determined so that the range does NOT contain the values themselves so that they
+        # can be appended afterwards.
+        if self.a < self.b:
+            a,b = self.a, self.b
+        else:
+            a,b = self.b, self.a
+        return [a] + list(range(math.floor(a)+1, math.floor(b))) + [b]
+        
+
+""" 
+Returns the point of intersection of the lines passing through a2,a1 and b2,b1.
+a1: [x, y] a point on the first line
+a2: [x, y] another point on the first line
+b1: [x, y] a point on the second line
+b2: [x, y] another point on the second line
+"""
+# Inspired by / Taken from https://stackoverflow.com/a/42727584/805673
+# Returns errorcode, x, y; errorcode == 0 if successful.
+# After calculating the intersection of the two lines, we additionally check
+# if this is a valid intersection for the two line segments, i.e. check if the
+# found point is between the two points of each line segment.
+def get_intersectBak(a1, a2, b1, b2):
+    s = numpy.vstack([a1,a2,b1,b2])        # s for stacked
+    h = numpy.hstack((s, numpy.ones((4, 1)))) # h for homogeneous
+    l1 = numpy.cross(h[0], h[1])           # get first line
+    l2 = numpy.cross(h[2], h[3])           # get second line
+    x, y, z = numpy.cross(l1, l2)          # point of intersection
+    if z == 0:                          # lines are parallel
+        return -1, None, None
+    x,y = (x/z, y/z) # The points are defined as (x, y, 1)
+    # Now check if the point we have found is on the two line segments
+    # The following check is not safe because of numeric issues (especially for horizontal and vertical lines)
+    #if Interval(a1[0], a2[0]).contains(x) \
+    #        and Interval(b1[0], b2[0]).contains(x) \
+    #        and Interval(a1[1], a2[1]).contains(y) \
+    #        and Interval(b1[1], b2[1]).contains(y):
+    #            return 0, x, y
+    # Instead, let's check if we have to move something between 0% and 100% of the
+    # distance between two points:
+    # The point we found is the point of a line segment plus a relative amount t of the
+    # connection vector to the other point of that line segment:
+    # (x,y) = a1 + (a2-a1) * t
+    # (x,y) - a1 = (a2-a1) * t
+    b = numpy.array([x-a1[0], y-a1[1]])
+    A = numpy.array([[a2[0]-a1[0]], [a2[1]-a1[1]]])
+    t = numpy.linalg.lstsq(A, b, rcond=None)[0][0] # First index for return-struct-unpacking, second for solution-indexing
+    if Interval(0,1).contains(t):
+        return 0, x, y
+    else:
+        return -1, None, None
+
+def get_intersect(a1, a2, b1, b2):
+    # v = vector from p1 to p2
+    # line segment = p1 + v * [0..1]
+    a = numpy.array(a1).reshape(2,1)
+    a2 = numpy.array(a2).reshape(2,1)
+    b = numpy.array(b1).reshape(2,1)
+    b2 = numpy.array(b2).reshape(2,1)
+    va = a2 - a
+    vb = b2 - b
+    #    a + va * ta = b + vb * tb
+    # => a - b = vb * tb - va * ta
+    # => a - b = (vb, -va) * (tb ta)^T = A * (tb ta)^T
+    A = numpy.hstack((vb, -va))
+    t, residuals, rank, singularvals = numpy.linalg.lstsq(A, a-b, rcond=None)
+    if rank < 2:
+        return -1, None, None
+    i = Interval(0,1)
+    if i.contains(t[0]) and i.contains(t[1]):
+        p = a + va * t[1]
+        return 0, p[0,0], p[1,0] # p.shape == (2,1) (it's 2D)
+    return -1, None, None
+
+class Mapping(object):
+    def __init__(self, x_from, x_to, hbin_from, hbin_to, y_from, y_to, vbin_from, vbin_to):
+        self.x_from = x_from
+        self.x_to = x_to
+        self.y_from = y_from
+        self.y_to = y_to
+        self.hbin_from = hbin_from
+        self.hbin_to = hbin_to
+        self.vbin_from = vbin_from
+        self.vbin_to = vbin_to
+        self.hbins_per_x = (hbin_to - hbin_from) / (x_to - x_from)
+        self.vbins_per_y = (vbin_to - vbin_from) / (y_to - y_from)
+
+    def map(self, x, y, rounding=True):
+        return self.mapx(x, rounding), self.mapy(y, rounding)
+    def mapx(self, x, rounding=True):
+        # The nice thing about these mappings is that if any direction is reversed, this
+        # effect is automatically fixed by the quotient hbins_per_x.
+        # For example, if the x-direction is reversed (i.e. x_from > x_to), the denominator of
+        # hbins_per_x is negative. Then, for any valid/fitting x, (x - self.x_from) is negative,
+        # too. The result of the division indicates which fraction of the whole hbin-interval we
+        # have to advance. The same holds true for the bin indexes.
+        # Therefore, we can ignore the directions of x, h, y and v here.
+        fval = (x - self.x_from) * self.hbins_per_x + self.hbin_from
+        return int(round(fval)) if rounding else fval
+    def mapy(self, y, rounding=True):
+        fval = (y - self.y_from) * self.vbins_per_y + self.vbin_from
+        return int(round(fval)) if rounding else fval
+
+    def fits(self, x, y):
+        return self.fitsx(x) and self.fitsy(y)
+    def fitsx(self, x):
+        return Interval(self.x_from, self.x_to).contains(x)
+    def fitsy(self, y):
+        return Interval(self.y_from, self.y_to).contains(y)
+
+    def mapLine(self, x_start, y_start, x_end, y_end):
+        # We have to draw something on the screen if either both points are in the plottable area
+        # or at least one point is in the plottable area (then, we need to determine the intersection
+        # with the bounding-box of the drawing area to know the point the line will be connected to).
+        # But in fact, there is a third possibility: If none of the points is in the drawing area,
+        # there could be two intersections with the bounding-box (like the line entering and leaving
+        # the area) and we would have to draw the connection between these two intersections.
+        # Summarizing, the sum of points in the drawing area and the number of intersections with the
+        # bounding box need to be 2.
+        # Due to numeric issues, values can be in the drawing area AND intersect with the borders.
+        # Therefore, we collect the values in a set() after mapping. After mapping, the intersection
+        # and the point itself will most probably be the same and not be added twice to the set.
+        mapping_points = set()
+        # First, check for the two points if they are in the drawing area
+        xlim = Interval(self.x_from, self.x_to)
+        ylim = Interval(self.y_from, self.y_to)
+        if self.fits(x_start, y_start):
+            mapping_points.add(self.map(x_start, y_start))
+        if self.fits(x_end, y_end):
+            mapping_points.add(self.map(x_end, y_end))
+        # Now, check for intersections with the drawing area bounding box
+        a = (x_start, y_start)
+        b = (x_end, y_end)
+        c0 = (self.x_from, self.y_from) # corner point, lower left
+        c1 = (self.x_from, self.y_to) # upper left
+        c2 = (self.x_to, self.y_to) # upper right
+        c3 = (self.x_to, self.y_from) # lower right
+        error, x, y = get_intersect(a, b, c0, c1)
+        if not error:
+            mapping_points.add(self.map(x,y))
+        error, x, y = get_intersect(a, b, c1, c2)
+        if not error:
+            mapping_points.add(self.map(x,y))
+        error, x, y = get_intersect(a, b, c2, c3)
+        if not error:
+            mapping_points.add(self.map(x,y))
+        error, x, y = get_intersect(a, b, c3, c0)
+        if not error:
+            mapping_points.add(self.map(x,y))
+
+        # Now, if we have at least mapping points, we will go on
+        if len(mapping_points) != 2:
+            return []
+        # Now, continuing with a list so that we can consider one point the start
+        # and the other point the end of the line segment.
+        mapping_points = list(mapping_points)
+
+        # For the sampling points of the mapping, we determine if it is a flat or a steep line
+        # (with respect to the mapped bins).
+        # If it is steep, we use all integers in the y-interval; if it is flat, use the x-interval. This
+        # prevents us from having a non-continuous line or even no line at all, imagine a completely vertical
+        # line ...
+        DEBUG("mapping_points: {}".format(str(mapping_points)))
+        #ah, av = self.map(mapping_points[0][0], mapping_points[0][1], rounding=False)
+        #bh, bv = self.map(mapping_points[1][0], mapping_points[1][1], rounding=False)
+        ah, av = mapping_points[0][0], mapping_points[0][1]
+        bh, bv = mapping_points[1][0], mapping_points[1][1]
+        if bv-av == 0 and bh-ah == 0:
+            return []
+        is_steep = (bh-ah == 0) or (abs((bv-av)/(bh-ah)) > 1)
+        DEBUG(str(is_steep))
+        if is_steep: # swap horizontal and vertical for the following calculations (straight line equation)
+            ah, av, bh, bv = av, ah, bv, bh
+        slope = (bv-av) / (bh-ah)
+        line = []
+        for h in Interval(ah, bh).arange():
+            v = (h-ah) * slope + av
+            h, v = int(round(h)), int(round(v))
+            point = (h,v) if not is_steep else (v,h)
+            line.append(point)
+        return line
 
 
 class Grapher(object):
@@ -187,16 +387,13 @@ class Grapher(object):
         xgrid = self.getxgrid()
         ygrid = self.getygrid()
         for x in xgrid:
-            col = self.mapValue(x, self.x_min, self.x_max, self.left, self.right)
+            col = self.mapx(x)
             for row in range(self.top, self.bottom):
-                self.window.addstr(row, col, '|')
+                self.window.addstr(row, col, '|') # TODO Replace by unicode box-drawing character
         for y in ygrid:
-            # The first one works, too, but does not yield the same result as the x-axis so the gridline and x-axis don't match
-            #row = self.mapValue(y, self.y_min, self.y_max, self.height-1, 0)
-            row = self.mapValue(y, self.y_min, self.y_max, self.bottom, self.top)
-        #xaxisy = self.height-1 - self.mapValue(0, self.y_min, self.y_max, 0, self.height-1)
+            row = self.mapy(y)
             for col in range(self.left, self.right):
-                self.window.addstr(row, col, '-')
+                self.window.addstr(row, col, '-') # TODO see above
     
     def plotGrid(self):
         if not self.border_bottom or not self.border_left:
@@ -209,14 +406,14 @@ class Grapher(object):
             self.window.addstr(row, self.left-1, '│')
         self.window.addstr(self.bottom+1, self.left-1, '└')
         for x in xgrid:
-            col = self.mapValue(x, self.x_min, self.x_max, self.left, self.right)
+            col = self.mapping.mapx(x)
             text = str(x)
             self.window.addstr(self.bottom+1, col, '┴') # self.bottom+1 == self.height-2 (line before last line)
             if col + len(text) > self.width-1:
                 col = self.width-1 - len(text)
             self.window.addstr(self.bottom+2, col, text) # self.bottom+2 == self.height-1 (last line)
         for y in ygrid:
-            row = self.mapValue(y, self.y_min, self.y_max, self.bottom, self.top)
+            row = self.mapping.mapy(y)
             self.window.addstr(row, self.border_left-1, '├')
             text = str(y)
             # The left-border text length should be <= border_left-1 --> len <= border_left-2 + " "
@@ -232,21 +429,20 @@ class Grapher(object):
     # TODO If the coordinate base lies outside of the drawing area, what will happen?
     def plotAxis(self):
         # Calculate x, y values at y, x axis
-        yaxisx = self.mapValue(0, self.x_min, self.x_max, self.left, self.right)
-        xaxisy = self.mapValue(0, self.y_min, self.y_max, self.bottom, self.top)
+        centercol, centerrow = self.mapping.map(0, 0)
         # Plot y axis
-        if self.isPlottable(0, self.y_min):
-            for y in range(self.top, self.bottom+1):
-                self.window.addstr(y, yaxisx, "│")
-            self.window.addstr(self.top, yaxisx, "↑") # arrow
+        if self.mapping.fitsx(0):
+            for row in range(self.top, self.bottom+1):
+                self.window.addstr(row, centercol, "│")
+            self.window.addstr(self.top, centercol, "↑") # arrow
         # Plot x axis
-        if self.isPlottable(self.x_min, 0):
-            for x in range(self.left, self.right+1):
-                self.window.addstr(xaxisy, x, "─")
-            self.window.addstr(xaxisy, self.right, "→") # arrow
+        if self.mapping.fitsy(0):
+            for col in range(self.left, self.right+1):
+                self.window.addstr(centerrow, col, "─")
+            self.window.addstr(centerrow, self.right, "→") # arrow
         # Plot origin
-        if self.isPlottable(0, 0):
-            self.window.addstr(xaxisy, yaxisx, "+")
+        if self.mapping.fits(0, 0):
+            self.window.addstr(centerrow, centercol, "┼")
 
     def toggleLegend(self):
         self.legend = not self.legend
@@ -277,47 +473,29 @@ class Grapher(object):
             self.window.addstr(y, x, ds.label, curses.color_pair(ds.color) | curses.A_REVERSE)
             y += 1
 
-    """
-    If we have the (x or y)-limits origin_start to origin_end and we print this
-    on screen/window coordinates output_start (0) to output_end (width-1 / height-1),
-    where do we have to print the value?
-    """
-    def mapValue(self, value, origin_start, origin_end, output_start, output_end):
-        origin_proportion = (value - origin_start) / (origin_end - origin_start)
-        output_proportion = origin_proportion * (output_end - output_start)
-        return int(output_start + output_proportion)
-
-    """
-    Checks whether a given (x,y) is inside the drawing area.
-    """
-    def isPlottable(self, x, y):
-        plottable = True
-        if (x < self.x_min):
-            plottable = False
-        if (x > self.x_max):
-            plottable = False
-        if (y < self.y_min):
-            plottable = False
-        if (y > self.y_max):
-            plottable = False
-        if (not plottable) and self.autoAxis:
-            DEBUG("ERR not plottable during autoaxis!!")
-        return plottable
+    def updateMapping(self):
+        self.mapping = Mapping(self.x_min, self.x_max, self.left, self.right, self.y_min, self.y_max, self.bottom, self.top)
 
     def plotAll(self):
-        # TODO: Currently Raster, make Vector.
+        # Plot the (straight) connection lines between the data points
+        for ds in self.seriesList:
+            for i in range(ds.length-1):
+                ax, ay, bx, by = ds.X[i], ds.Y[i], ds.X[i+1], ds.Y[i+1]
+                DEBUG(str(self.mapping))
+                DEBUG("{}, {}, {}, {}".format(ax, ay, bx, by))
+                for col, row in self.mapping.mapLine(ax, ay, bx, by):
+                    self.window.addstr(row, col, "·", curses.color_pair(ds.color))
+        # Plot the data points in front of the lines
         for ds in self.seriesList:
             DEBUG("NOTE ds.length %i" % ds.length)
             for i in range(ds.length):
                 x, y = ds.X[i], ds.Y[i]
                 # Check the value lies in the plottable area.
-                if self.isPlottable(x, y):
+                if self.mapping.fits(x, y):
                     # The value is plottable, map it to a (px, py) plot location.
-                    px = self.mapValue(x, self.x_min, self.x_max, self.left, self.right)
-                    py = self.mapValue(y, self.y_min, self.y_max, self.bottom, self.top)
+                    col, row = self.mapping.map(x,y)
                     # Plot the point at that location.
-                    #self.window.addstr(py, px, " ", curses.color_pair(ds.color) | curses.A_REVERSE)
-                    self.window.addstr(py, px, "*", curses.color_pair(ds.color))
+                    self.window.addstr(row, col, "+", curses.color_pair(ds.color))
 
     def clearPlotArea(self):
         self.window.addstr(0, 0, " ")
@@ -338,6 +516,8 @@ class Grapher(object):
         self.clearPlotArea()
         # Update axis limits
         self.updateAxis()
+        # Update the mapping between x,y and row,col
+        self.updateMapping()
         # Plot the background grid lines
         self.plotGridlines()
         # Plot axis lines
@@ -365,6 +545,10 @@ class Figure(object):
         ax = Grapher(stdscr)
         for s in self.seriesList:
             ax.plot(s.X, s.Y, s.label)
+
+        # DEBUG
+        for i in range(1):
+            ax.moveup()
 
         colornum = 0
         while True:
@@ -409,16 +593,24 @@ if __name__ == '__main__':
     import numpy
     import math
     import time
+    
+    #m = Mapping(-3, 3, 0, 10, -3, 3, 0, 10)
+    #m.mapLine(-5,-12, 1,2)
 
     # Determine example plots
     x = numpy.arange(-3.5, 13.5, .01)
-    ya = [math.sin(i) for i in x]
-    yb = [(1/4)*math.sin(4*i) for i in x]
-    yc = [math.sin(i) + (1/4)*math.sin(4*i) for i in x]
+    #x = numpy.array([0, .1]) # DEBUG
+    #ya = [math.sin(i) for i in x]
+    #yb = [(1/4)*math.sin(4*i) for i in x]
+    #yc = [math.sin(i) + (1/4)*math.sin(4*i) for i in x]
+    ya = numpy.sin(x)
+    yb = 1/4 * numpy.sin(4*x)
+    yc = numpy.sin(x) + 1/4*numpy.sin(4*x)
 
     print("First, demonstrating a direct plot ...")
     time.sleep(1)
     plot(x, ya, "sin(x)")
+    exit() # DEBUG
 
     print("Now, demonstrating multiple plots in a Figure object.")
     time.sleep(1)
