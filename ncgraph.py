@@ -145,11 +145,17 @@ class Mapping(object):
         # too. The result of the division indicates which fraction of the whole hbin-interval we
         # have to advance. The same holds true for the bin indexes.
         # Therefore, we can ignore the directions of x, h, y and v here.
-        fval = (x - self.x_from) * self.hbins_per_x + self.hbin_from
-        return int(round(fval)) if rounding else fval
+        res = (x - self.x_from) * self.hbins_per_x + self.hbin_from
+        if rounding:
+            res = numpy.round(res)
+            res = res.astype(int)
+        return res
     def mapy(self, y, rounding=True):
-        fval = (y - self.y_from) * self.vbins_per_y + self.vbin_from
-        return int(round(fval)) if rounding else fval
+        res = (y - self.y_from) * self.vbins_per_y + self.vbin_from
+        if rounding:
+            res = numpy.round(res)
+            res = res.astype(int)
+        return res
 
     def fits(self, x, y):
         return self.fitsx(x) and self.fitsy(y)
@@ -157,6 +163,25 @@ class Mapping(object):
         return Interval(self.x_from, self.x_to).contains(x)
     def fitsy(self, y):
         return Interval(self.y_from, self.y_to).contains(y)
+
+    def nofit(self, x, y):
+        # Ensure that we are working on arrays
+        x = numpy.array(x)
+        y = numpy.array(y)
+        # Determine left, right, top, bottom borders which is dependent on the ordering of
+        # the from-to-values
+        left = min(self.x_from, self.x_to)
+        right = max(self.x_from, self.x_to)
+        bottom = min(self.y_from, self.y_to)
+        top = max(self.y_from, self.y_to)
+        # For each border, determine if the value does not fit because it has crossed out
+        # of the drawing area at that border
+        outside = (x < left) * 1
+        outside |= (x > right) * 2
+        outside |= (y < bottom) * 4
+        outside |= (y > top) * 8
+        return outside
+
 
     def mapLine(self, x_start, y_start, x_end, y_end):
         # We have to draw something on the screen if either both points are in the plottable area
@@ -178,27 +203,29 @@ class Mapping(object):
             mapping_points.add(self.map(x_start, y_start))
         if self.fits(x_end, y_end):
             mapping_points.add(self.map(x_end, y_end))
-        # Now, check for intersections with the drawing area bounding box
-        a = (x_start, y_start)
-        b = (x_end, y_end)
-        c0 = (self.x_from, self.y_from) # corner point, lower left
-        c1 = (self.x_from, self.y_to) # upper left
-        c2 = (self.x_to, self.y_to) # upper right
-        c3 = (self.x_to, self.y_from) # lower right
-        error, x, y = get_intersect(a, b, c0, c1)
-        if not error:
-            mapping_points.add(self.map(x,y))
-        error, x, y = get_intersect(a, b, c1, c2)
-        if not error:
-            mapping_points.add(self.map(x,y))
-        error, x, y = get_intersect(a, b, c2, c3)
-        if not error:
-            mapping_points.add(self.map(x,y))
-        error, x, y = get_intersect(a, b, c3, c0)
-        if not error:
-            mapping_points.add(self.map(x,y))
+        # Now, check for intersections with the drawing area bounding box, for speedup only check
+        # if more points are missing.
+        if len(mapping_points) != 2:
+            a = (x_start, y_start)
+            b = (x_end, y_end)
+            c0 = (self.x_from, self.y_from) # corner point, lower left
+            c1 = (self.x_from, self.y_to) # upper left
+            c2 = (self.x_to, self.y_to) # upper right
+            c3 = (self.x_to, self.y_from) # lower right
+            error, x, y = get_intersect(a, b, c0, c1)
+            if not error:
+                mapping_points.add(self.map(x,y))
+            error, x, y = get_intersect(a, b, c1, c2)
+            if not error:
+                mapping_points.add(self.map(x,y))
+            error, x, y = get_intersect(a, b, c2, c3)
+            if not error:
+                mapping_points.add(self.map(x,y))
+            error, x, y = get_intersect(a, b, c3, c0)
+            if not error:
+                mapping_points.add(self.map(x,y))
 
-        # Now, if we have at least mapping points, we will go on
+        # Now, if we have exactly two mapping points, we will go on
         if len(mapping_points) != 2:
             return []
         # Now, continuing with a list so that we can consider one point the start
@@ -477,6 +504,57 @@ class Grapher(object):
         self.mapping = Mapping(self.x_min, self.x_max, self.left, self.right, self.y_min, self.y_max, self.bottom, self.top)
 
     def plotAll(self):
+        # The naive approach here is to plot all lines between data points first (so that they
+        # end up in the background) and then plot all data points on top of them. This works but
+        # slows down the application if there are a lot of data points involved. Maybe, this is
+        # due to the fact that for each connection line, we have to determine if if will be drawn
+        # which is done by checking if the start and end point are in the drawing area and, if not,
+        # if there are intersections with the drawing-area-borders.
+        # 1. To speed up, we have a vectorized Mapping.nofit() method which checks for each data
+        # point if is is not in the drawing area and if so, encodes on which side(s) of the
+        # drawing area it lies. Then, by checking if two consecutive data points are outside
+        # of the drawing area on the same side (e.g. both points are on the left side of the
+        # drawing area), we can omit the connection line because there is no chance of the line
+        # crossing the drawing area borders. Furthermore, we only determine if the points are
+        # in the drawing area once in this method here (it could be done once more in the
+        # mapLine() or map() method but that's not our business here!)
+        # 2. Furthermore, we check if two consecutive points which should be are mapped on the same
+        # pixel. If so, we can skip one of that points and furthermore skip drawing that line. But
+        # as it seems to me that drawing the same point twice yields no performance penalty (I guess
+        # it just corresponds to setting a value in the underlying curses-array), we just draw every
+        # point.
+        for ds in self.seriesList:
+            # First, determine where the data points lie outside of the drawing area
+            outsides = self.mapping.nofit(ds.X, ds.Y)
+            # 1. We can omit a line if two consecutive points share a nofit-direction
+            omitlines = outsides[0:-1] & outsides[1:]
+            omitlines = numpy.append(omitlines, 15) # Hack so that the array sizes stay the same for iterating
+            # 2. If two consecutive points are the same, omit the lines, too. To do so,
+            # pre-calculate the mapping values.
+            cols = numpy.empty(outsides.shape) # Pre initialize arrays for the mappings so that they have the
+            rows = numpy.empty(outsides.shape) # same shape as the other array
+            cols[outsides==0] = self.mapping.mapx(ds.X[outsides==0]) # Map the values
+            rows[outsides==0] = self.mapping.mapy(ds.Y[outsides==0])
+            cols = cols.astype(int) # Mapping.map() returns integer arrays but the types are changed when assigning
+            rows = rows.astype(int) # to the bigger arrays. Ensure the types here again.
+            # Try to draw the lines and draw the points
+            for i in range(len(outsides)):
+                # First try to draw the line if it is not obvious if it will be drawn
+                if not omitlines[i] and (rows[i], cols[i])!=(rows[i+1], cols[i+1]):
+                    ax, ay, bx, by = ds.X[i], ds.Y[i], ds.X[i+1], ds.Y[i+1]
+                    DEBUG(str(self.mapping))
+                    DEBUG("{}, {}, {}, {}".format(ax, ay, bx, by))
+                    for col, row in self.mapping.mapLine(ax, ay, bx, by):
+                        self.window.addstr(row, col, "·", curses.color_pair(ds.color))
+                # Then, draw the (current) point
+                if not outsides[i]:
+                    # The value is plottable, map it to a (px, py) plot location.
+                    # col, row = self.mapping.map(ds.X[i],ds.Y[i])
+                    # Plot the point at that location.
+                    self.window.addstr(rows[i], cols[i], "+", curses.color_pair(ds.color))
+
+        """
+        DEPRECATED APPROACH
         # Plot the (straight) connection lines between the data points
         for ds in self.seriesList:
             for i in range(ds.length-1):
@@ -496,6 +574,7 @@ class Grapher(object):
                     col, row = self.mapping.map(x,y)
                     # Plot the point at that location.
                     self.window.addstr(row, col, "+", curses.color_pair(ds.color))
+        """
 
     def clearPlotArea(self):
         self.window.addstr(0, 0, " ")
@@ -547,7 +626,7 @@ class Figure(object):
             ax.plot(s.X, s.Y, s.label)
 
         # DEBUG
-        for i in range(1):
+        for i in range(0):
             ax.moveup()
 
         colornum = 0
@@ -598,7 +677,7 @@ if __name__ == '__main__':
     #m.mapLine(-5,-12, 1,2)
 
     # Determine example plots
-    x = numpy.arange(-3.5, 13.5, .01)
+    x = numpy.arange(-11.5, 13.5, .001)
     #x = numpy.array([0, .1]) # DEBUG
     #ya = [math.sin(i) for i in x]
     #yb = [(1/4)*math.sin(4*i) for i in x]
@@ -606,11 +685,12 @@ if __name__ == '__main__':
     ya = numpy.sin(x)
     yb = 1/4 * numpy.sin(4*x)
     yc = numpy.sin(x) + 1/4*numpy.sin(4*x)
+    yd = numpy.cos(x) + 1/4*numpy.cos(4*x)
 
     print("First, demonstrating a direct plot ...")
     time.sleep(1)
     plot(x, ya, "sin(x)")
-    exit() # DEBUG
+    # exit() # DEBUG
 
     print("Now, demonstrating multiple plots in a Figure object.")
     time.sleep(1)
@@ -618,6 +698,7 @@ if __name__ == '__main__':
     f.plot(x, ya, "sin(x)")
     f.plot(x, yb, "(1/4)sin(4x)")
     f.plot(x, yc, "sin(x)+(1/4)sin(4x)")
+    f.plot(x, yd, "cos(x)+1/4*cos(4*x)")
     f.show()
     print("And, Figure objects can be reused (shown again) after they have been closed.")
     time.sleep(1)
