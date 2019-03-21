@@ -3,7 +3,8 @@ Python NCurses Grapher Class (terminal plotting library).
 
 ## Usage
 
-The `ncgraph` plotting library has a very simple usage. Either, use `ncgraph.plot(x, y [,legend])` to plot a single function or create a figure object with `ncgraph.Figure()` while adding plots with `figure.plot(x,y)`. Finally, the figure object can be shown with `figure.show()`.
+1. Direct plotting: `ncgraph.plot(x, y [,legend])`.
+2. Create a figure object with `ncgraph.Figure()`, add plots with `figure.plot(x,y)` and show the figure object with `figure.show()`.
 
 While the curses application is running, the keys are (currently hardcoded) mapped as follows:
 * 'q': quit
@@ -20,9 +21,10 @@ import ncgraph
 
 # Create example plotting data
 x = numpy.arange(-3.5, 13.5, .01)
-ya = [math.sin(i) for i in x]
-yb = [(1/4)*math.sin(4*i) for i in x]
-yc = [math.sin(i) + (1/4)*math.sin(4*i) for i in x]
+ya = numpy.sin(x)
+yb = 1/4*numpy.sin(4*x)
+yc = numpy.sin(x) + 1/4*numpy.sin(4*x)
+yd = numpy.cos(x) + 1/4*numpy.cos(4*x)
 
 # Direct plotting
 ncgraph.plot(x, ya, "sin(x)")
@@ -32,6 +34,7 @@ fig = ncgraph.Figure()
 fig.plot(x, ya, "sin(x)")
 fig.plot(x, yb, "(1/4)sin(4x)")
 fig.plot(x, yc, "sin(x)+(1/4)sin(4x)")
+fig.plot(x, yd, "cos(x)+(1/4)cos(4x)")
 fig.show()
 
 # After closing, the Figure object can be shown again
