@@ -677,6 +677,33 @@ def plot(x, y, label=""):
     fig.plot(x, y, label)
     fig.show()
 
+"""
+Convenience function to convert rising/falling-edge interrupt-timestamps and associated values into a plottable signal.
+Assuming a digital signal that was recorded as (timestamp, value)-pairs while the value describes if we observed
+a rising or a falling edge, this function converts the two lists timestamps and values into two corresponding
+lists which, when plotted, look like the digital signal. In fact, this step only consists of repeating each samples
+value at the timestamp of the next sample so that we get a nice chain of rectangles.
+
+Although this implementation looks a little bit shitty, it is included here as a tribute to my friend learning programming
+right now who had the task to implement this function. Compared to what happens when plotting the values, the inefficiency
+of this implementation here is negligible.
+"""
+def interrupts2signal(Zeitpunkte, Werte): # German: Zeitpunkte = timestamps, Werte = values, neu = new
+    # Lists containing the additional points so that the plot ends up nicely
+    Werte_neu=[]
+    Zeitpunkte_neu=[]
+    # Artificial for-loop
+    i=0
+    while i<len(Werte):
+        Werte_neu.append(Werte[i])
+        Zeitpunkte_neu.append(Zeitpunkte[i])
+        if i+1<len(Werte):
+            Werte_neu.append(Werte[i])
+            Zeitpunkte_neu.append(Zeitpunkte[i+1])
+        # Part of the artificial for-loop
+        i=i+1
+    return Zeitpunkte_neu, Werte_neu
+
 if __name__ == '__main__':
     import numpy
     import math
