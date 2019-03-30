@@ -585,7 +585,7 @@ class Grapher(object):
 
     def plot(self, X, Y, label="myData"):
         # Add the new data to the seriesList.
-        self.seriesList.append(DataSeries(X, Y, label, color=self.colorList[len(self.seriesList)]))
+        self.seriesList.append(DataSeries(numpy.array(X), numpy.array(Y), label, color=self.colorList[len(self.seriesList)]))
         self.redraw()
 
     def redraw(self):
