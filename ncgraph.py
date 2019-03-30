@@ -263,6 +263,7 @@ class Grapher(object):
     legend = False
     colorList = [2, 3, 4, 5, 6, 7]
     autoAxis = True
+    draw_lines = True
 
     def __init__(self, window):
         # Reset seriesList for consecutive calls
@@ -484,6 +485,10 @@ class Grapher(object):
             self.border_bottom = BOTTOMBORDER
         self.redraw()
 
+    def toggleLines(self):
+        self.draw_lines = not self.draw_lines
+        self.redraw()
+
     """
     If self.legend is True, plots a legend box in the upper right corner.
     """
@@ -507,7 +512,7 @@ class Grapher(object):
         # The naive approach here is to plot all lines between data points first (so that they
         # end up in the background) and then plot all data points on top of them. This works but
         # slows down the application if there are a lot of data points involved. Maybe, this is
-        # due to the fact that for each connection line, we have to determine if if will be drawn
+        # due to the fact that for each connection line, we have to determine if it will be drawn
         # which is done by checking if the start and end point are in the drawing area and, if not,
         # if there are intersections with the drawing-area-borders.
         # 1. To speed up, we have a vectorized Mapping.nofit() method which checks for each data
@@ -527,8 +532,10 @@ class Grapher(object):
             # First, determine where the data points lie outside of the drawing area
             outsides = self.mapping.nofit(ds.X, ds.Y)
             # 1. We can omit a line if two consecutive points share a nofit-direction
-            omitlines = outsides[0:-1] & outsides[1:]
-            omitlines = numpy.append(omitlines, 15) # Hack so that the array sizes stay the same for iterating
+            # We only have to calculate this if we actually want to draw the lines
+            if self.draw_lines:
+                omitlines = outsides[0:-1] & outsides[1:]
+                omitlines = numpy.append(omitlines, 15) # Hack so that the array sizes stay the same for iterating
             # 2. If two consecutive points are the same, omit the lines, too. To do so,
             # pre-calculate the mapping values.
             cols = numpy.empty(outsides.shape) # Pre initialize arrays for the mappings so that they have the
@@ -539,8 +546,8 @@ class Grapher(object):
             rows = rows.astype(int) # to the bigger arrays. Ensure the types here again.
             # Try to draw the lines and draw the points
             for i in range(len(outsides)):
-                # First try to draw the line if it is not obvious if it will be drawn
-                if not omitlines[i] and (rows[i], cols[i])!=(rows[i+1], cols[i+1]):
+                # First try to draw the line if it is not obvious that it will not be drawn
+                if self.draw_lines and not omitlines[i] and (rows[i], cols[i])!=(rows[i+1], cols[i+1]):
                     ax, ay, bx, by = ds.X[i], ds.Y[i], ds.X[i+1], ds.Y[i+1]
                     DEBUG(str(self.mapping))
                     DEBUG("{}, {}, {}, {}".format(ax, ay, bx, by))
@@ -642,6 +649,8 @@ class Figure(object):
                 ax.toggleLegend()
             elif k == 't':
                 ax.toggleTicks()
+            elif k == 'c':
+                ax.toggleLines()
             elif k == 'l':
                 ax.moveright()
             elif k == 'h':
